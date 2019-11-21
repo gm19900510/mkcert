@@ -67,13 +67,13 @@ Then you can install using [Linuxbrew](http://linuxbrew.sh/)
 
 ```
 brew install mkcert
-````
+```
 
-or build from source (requires Go 1.10+)
+or build from source (requires Go 1.13+)
 
 ```
-go get -u github.com/FiloSottile/mkcert
-$(go env GOBIN)/mkcert
+git clone github.com/FiloSottile/mkcert
+go build -ldflags "-X main.Version=$(git describe --tags)"
 ```
 
 or use [the pre-built binaries](https://github.com/FiloSottile/mkcert/releases).
@@ -88,7 +88,7 @@ makepkg -si
 
 ### Windows
 
-On Windows, use Chocolatey
+On Windows, use [Chocolatey](https://chocolatey.org)
 
 ```
 choco install mkcert

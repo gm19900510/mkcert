@@ -5,6 +5,7 @@
 package main
 
 import (
+	"bytes"
 	"log"
 	"os"
 	"os/exec"
@@ -41,9 +42,15 @@ func init() {
 
 	switch runtime.GOOS {
 	case "darwin":
-		if hasCertutil = binaryExists("certutil"); hasCertutil {
+		switch {
+		case binaryExists("certutil"):
 			certutilPath, _ = exec.LookPath("certutil")
-		} else {
+			hasCertutil = true
+		case binaryExists("/usr/local/opt/nss/bin/certutil"):
+			// Check the default Homebrew path, to save executing Ruby. #135
+			certutilPath = "/usr/local/opt/nss/bin/certutil"
+			hasCertutil = true
+		default:
 			out, err := exec.Command("brew", "--prefix", "nss").Output()
 			if err == nil {
 				certutilPath = filepath.Join(strings.TrimSpace(string(out)), "bin", "certutil")
@@ -77,8 +84,8 @@ func (m *mkcert) checkNSS() bool {
 func (m *mkcert) installNSS() bool {
 	if m.forEachNSSProfile(func(profile string) {
 		cmd := exec.Command(certutilPath, "-A", "-d", profile, "-t", "C,,", "-n", m.caUniqueName(), "-i", filepath.Join(m.CAROOT, rootName))
-		out, err := cmd.CombinedOutput()
-		fatalIfCmdErr(err, "certutil -A", out)
+		out, err := execCertutil(cmd)
+		fatalIfCmdErr(err, "certutil -A -d "+profile, out)
 	}) == 0 {
 		log.Printf("ERROR: no %s security databases found", NSSBrowsers)
 		return false
@@ -98,9 +105,22 @@ func (m *mkcert) uninstallNSS() {
 			return
 		}
 		cmd := exec.Command(certutilPath, "-D", "-d", profile, "-n", m.caUniqueName())
-		out, err := cmd.CombinedOutput()
-		fatalIfCmdErr(err, "certutil -D", out)
+		out, err := execCertutil(cmd)
+		fatalIfCmdErr(err, "certutil -D -d "+profile, out)
 	})
+}
+
+// execCertutil will execute a "certutil" command and if needed re-execute
+// the command with commandWithSudo to work around file permissions.
+func execCertutil(cmd *exec.Cmd) ([]byte, error) {
+	out, err := cmd.CombinedOutput()
+	if err != nil && bytes.Contains(out, []byte("SEC_ERROR_READ_ONLY")) && runtime.GOOS != "windows" {
+		origArgs := cmd.Args[1:]
+		cmd = commandWithSudo(cmd.Path)
+		cmd.Args = append(cmd.Args, origArgs...)
+		out, err = cmd.CombinedOutput()
+	}
+	return out, err
 }
 
 func (m *mkcert) forEachNSSProfile(f func(profile string)) (found int) {
